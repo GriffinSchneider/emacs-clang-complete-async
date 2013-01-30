@@ -413,14 +413,20 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
      (setq ac-clang-status 'idle)
      ac-clang-current-candidate)))
 
+;; Run from kill-buffer-hook to cleanup the autocomplete process when the file is
+;; closed
+(defun ac-clang-cleanup-on-buffer-close ()
+  (when ac-clang-completion-process (kill-process ac-clang-completion-process)))
 
 (defun ac-clang-reparse-buffer ()
   (if ac-clang-completion-process
       (ac-clang-send-reparse-request ac-clang-completion-process)))
 
 (defun ac-clang-launch-completion-process ()
-  ;; (let ((default-directory "/Users/griffinschneider/Desktop/yet-another-thing/iOS"))
-  (when ac-clang-completion-process (kill-process ac-clang-completion-process))
+  ;; Cleanup the old completion process if one exists
+  (when ac-clang-completion-process
+    (kill-process ac-clang-completion-process))
+  ;; Create completion process
   (setq ac-clang-completion-process
         (let ((process-connection-type nil))
           (apply 'start-process
@@ -428,6 +434,9 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
                  ac-clang-complete-executable
                  (append (ac-clang-build-complete-args)
                          (list (buffer-file-name))))))
+  ;; Add hook to kill created process if the buffer is closed
+  (when ac-clang-completion-process
+    (add-hook 'kill-buffer-hook 'ac-clang-cleanup-on-buffer-close nil 'local))
 
   (set-process-filter ac-clang-completion-process 'ac-clang-filter-output)
   (set-process-query-on-exit-flag ac-clang-completion-process nil)
