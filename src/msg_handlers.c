@@ -1,4 +1,3 @@
-#include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -78,22 +77,10 @@ void completion_doCompletion(completion_Session *session, FILE *fp)
     /* calculate and show code completions results */
     res = completion_codeCompleteAt(session, row, column);
 
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
-    
     /* fprintf(stderr, "code completion results: %d\n", res->NumResults); */
     completion_printCodeCompletionResults(res, stdout, prefix);
     fprintf(stdout, "$"); fflush(stdout);    /* we need to inform emacs that all 
                                                 candidates has already been sent */
-
-    
-    gettimeofday(&end, NULL);
-    long elapsed = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
-    
-    FILE *file;
-    file = fopen("/Users/griffinschneider/log.txt", "a");
-    fprintf(file, "Printing took %f milliseconds, with %d results.\n", elapsed / 1000.0F, res->NumResults);
-    fclose(file);
     
     clang_disposeCodeCompleteResults(res);
 }
