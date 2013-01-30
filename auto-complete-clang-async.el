@@ -128,7 +128,8 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
             ((eq major-mode 'c-mode)
              "c")
             ((eq major-mode 'objc-mode)
-             (cond ((string= "m" (file-name-extension (buffer-file-name)))
+             (cond ((and (buffer-file-name)
+                         (string= "m" (file-name-extension (buffer-file-name))))
                     "objective-c")
                    (t
                     "objective-c++")))
@@ -364,10 +365,6 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
   (interactive)
   (ac-clang-send-cmdline-args ac-clang-completion-process))
 
-(defun ac-clang-send-shutdown-command (proc)
-  (process-send-string proc "SHUTDOWN\n"))
-
-
 (defun ac-clang-append-process-output-to-process-buffer (process output)
   "Append process output to the process buffer."
   (with-current-buffer (process-buffer process)
@@ -417,29 +414,25 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
      ac-clang-current-candidate)))
 
 
-(defun ac-clang-shutdown-process ()
-  (message "Shutting down clang process")
-  (if ac-clang-completion-process
-      (ac-clang-send-shutdown-command ac-clang-completion-process)))
-
 (defun ac-clang-reparse-buffer ()
   (if ac-clang-completion-process
       (ac-clang-send-reparse-request ac-clang-completion-process)))
 
 (defun ac-clang-launch-completion-process ()
-  (let ((default-directory "/Users/griffinschneider/Desktop/new-thing/iOS"))
-    (setq ac-clang-completion-process
-          (let ((process-connection-type nil))
-            (apply 'start-process
-                   "clang-complete" "*clang-complete*"
-                   ac-clang-complete-executable
-                   (append (ac-clang-build-complete-args)
-                           (list (buffer-file-name)))))))
+  ;; (let ((default-directory "/Users/griffinschneider/Desktop/yet-another-thing/iOS"))
+  (when ac-clang-completion-process (kill-process ac-clang-completion-process))
+  (setq ac-clang-completion-process
+        (let ((process-connection-type nil))
+          (apply 'start-process
+                 "clang-complete" "*clang-complete*"
+                 ac-clang-complete-executable
+                 (append (ac-clang-build-complete-args)
+                         (list (buffer-file-name))))))
 
   (set-process-filter ac-clang-completion-process 'ac-clang-filter-output)
   (set-process-query-on-exit-flag ac-clang-completion-process nil)
 
-  ;; (add-hook 'before-save-hook 'ac-clang-reparse-buffer)
+  (add-hook 'before-save-hook 'ac-clang-reparse-buffer)
   
   ;; Pre-parse source code.
   (ac-clang-send-reparse-request ac-clang-completion-process))
