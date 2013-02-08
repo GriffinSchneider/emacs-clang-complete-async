@@ -1,3 +1,4 @@
+
 * Introduction
 
 emacs-clang-complete-async is an emacs extension to complete C and C++ code, 
@@ -20,6 +21,8 @@ An experimental feature is added to this branch --- running
 
 
 * Setup
+
+brew upgrade --with-clang --all-targets --rtti --universal --jit llvm
 
 Compile the server part (clang-complete binary) first by executing =make=,
 then copy auto-complete-clang-async.el and the previously compiled
