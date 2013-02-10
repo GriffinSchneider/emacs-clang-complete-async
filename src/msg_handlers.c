@@ -76,13 +76,18 @@ void completion_doCompletion(completion_Session *session, FILE *fp)
 
     /* calculate and show code completions results */
     res = completion_codeCompleteAt(session, row, column);
+    if (res != NULL)
+    {
+      /* code completion completed successfully, so we sort and dump these
+       * completion candidates back to client */
 
-    /* fprintf(stderr, "code completion results: %d\n", res->NumResults); */
-    completion_printCodeCompletionResults(res, stdout, prefix);
+      /* fprintf(stderr, "code completion results: %d\n", res->NumResults); */
+      completion_printCodeCompletionResults(res, stdout, prefix);
+      clang_disposeCodeCompleteResults(res);
+    }
+    
     fprintf(stdout, "$"); fflush(stdout);    /* we need to inform emacs that all 
                                                 candidates has already been sent */
-    
-    clang_disposeCodeCompleteResults(res);
 }
 
 

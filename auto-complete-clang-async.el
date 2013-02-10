@@ -28,6 +28,7 @@
 
 ;; Auto Completion source for clang.
 ;; Uses a "completion server" process to utilize libclang.
+;; Also provides flymake syntax checking.
 
 ;;; Code:
 
@@ -35,6 +36,7 @@
 (provide 'auto-complete-clang-async)
 (require 'cl)
 (require 'auto-complete)
+(require 'flymake)
 
 
 (defcustom ac-clang-complete-executable
@@ -54,9 +56,6 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
   :group 'auto-complete
   :type '(repeat (string :tag "Argument" "")))
 (make-variable-buffer-local 'ac-clang-cflags)
-
-
-
 
 (defconst ac-clang-completion-pattern
   "^COMPLETION: \\([^\s\n:]*\\)\\(?: : \\)*\\(.*$\\)")
@@ -349,6 +348,12 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
     (process-send-string proc (format "prefix:%s\n" prefix))
     (ac-clang-send-source-code proc)))
 
+(defun ac-clang-send-syntaxcheck-request (proc)
+  (save-restriction
+    (widen)
+    (process-send-string proc "SYNTAXCHECK\n")
+    (ac-clang-send-source-code proc)))
+
 (defun ac-clang-send-cmdline-args (proc)
   ;; send message head and num_args
   (process-send-string proc "CMDLINEARGS\n")
@@ -364,6 +369,10 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
 (defun ac-clang-update-cmdlineargs ()
   (interactive)
   (ac-clang-send-cmdline-args ac-clang-completion-process))
+
+(defun ac-clang-send-shutdown-command (proc)
+  (if (eq (process-status "clang-complete") 'run)
+    (process-send-string proc "SHUTDOWN\n")))
 
 (defun ac-clang-append-process-output-to-process-buffer (process output)
   "Append process output to the process buffer."
@@ -411,16 +420,65 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
     (acknowledged
      (message "ac-clang-candidate triggered - ack")
      (setq ac-clang-status 'idle)
-     ac-clang-current-candidate)))
+     ac-clang-current-candidate)
 
-;; Run from kill-buffer-hook to cleanup the autocomplete process when the file is
-;; closed
-(defun ac-clang-cleanup-on-buffer-close ()
-  (when ac-clang-completion-process (kill-process ac-clang-completion-process)))
+    (preempted
+     ;; (message "clang-async is preempted by a critical request")
+     nil)))
+
+
+;; Syntax checking with flymake
+
+(defun ac-clang-flymake-process-sentinel ()
+  (interactive)
+  (setq flymake-err-info flymake-new-err-info)
+  (setq flymake-new-err-info nil)
+  (setq flymake-err-info
+        (flymake-fix-line-numbers
+         flymake-err-info 1 (flymake-count-lines)))
+  (flymake-delete-own-overlays)
+  (flymake-highlight-err-lines flymake-err-info))
+
+(defun ac-clang-flymake-process-filter (process output)
+  (ac-clang-append-process-output-to-process-buffer process output)
+  (flymake-log 3 "received %d byte(s) of output from process %d"
+               (length output) (process-id process))
+  (flymake-parse-output-and-residual output)
+  (when (string= (substring output -1 nil) "$")
+    (flymake-parse-residual)
+    (ac-clang-flymake-process-sentinel)
+    (setq ac-clang-status 'idle)
+    (set-process-filter ac-clang-completion-process 'ac-clang-filter-output)))
+
+(defun ac-clang-syntax-check ()
+  (interactive)
+  (when (eq ac-clang-status 'idle)
+    (with-current-buffer (process-buffer ac-clang-completion-process)
+      (erase-buffer))
+    (setq ac-clang-status 'wait)
+    (set-process-filter ac-clang-completion-process 'ac-clang-flymake-process-filter)
+    (ac-clang-send-syntaxcheck-request ac-clang-completion-process)))
+
+(defun ac-clang-shutdown-process ()
+  (if ac-clang-completion-process
+      (ac-clang-send-shutdown-command ac-clang-completion-process)))
 
 (defun ac-clang-reparse-buffer ()
   (if ac-clang-completion-process
       (ac-clang-send-reparse-request ac-clang-completion-process)))
+
+(defun ac-clang-async-autocomplete-autotrigger ()
+  (interactive)
+  (if ac-clang-async-do-autocompletion-automatically
+      (ac-clang-async-preemptive)
+      (self-insert-command 1)))
+
+(defun ac-clang-async-preemptive ()
+  (interactive)
+  (self-insert-command 1)
+  (if (eq ac-clang-status 'idle)
+      (ac-start)
+    (setq ac-clang-status 'preempted)))
 
 (defun ac-clang-launch-completion-process ()
   ;; Cleanup the old completion process if one exists
@@ -434,17 +492,18 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
                  ac-clang-complete-executable
                  (append (ac-clang-build-complete-args)
                          (list (buffer-file-name))))))
-  ;; Add hook to kill created process if the buffer is closed
-  (when ac-clang-completion-process
-    (add-hook 'kill-buffer-hook 'ac-clang-cleanup-on-buffer-close nil 'local))
 
   (set-process-filter ac-clang-completion-process 'ac-clang-filter-output)
   (set-process-query-on-exit-flag ac-clang-completion-process nil)
 
+  (add-hook 'kill-buffer-hook 'ac-clang-shutdown-process nil t)
   (add-hook 'before-save-hook 'ac-clang-reparse-buffer)
   
   ;; Pre-parse source code.
-  (ac-clang-send-reparse-request ac-clang-completion-process))
+  (ac-clang-send-reparse-request ac-clang-completion-process)
+  (local-set-key (kbd ".") 'ac-clang-async-autocomplete-autotrigger)
+  (local-set-key (kbd ":") 'ac-clang-async-autocomplete-autotrigger)
+  (local-set-key (kbd ">") 'ac-clang-async-autocomplete-autotrigger))
 
 
 (ac-define-source clang-async
