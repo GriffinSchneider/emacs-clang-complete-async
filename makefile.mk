@@ -27,8 +27,6 @@ dependency-list = $(addprefix  $(DEPENDENCY_PATH)/, $(depname-list))
 # -I option to help the compiler finding the headers
 CFLAGS += $(addprefix  -I, $(INCLUDE_PATH))
 
-CFLAGS += "-I/Users/griffinschneider/Desktop/trunk/include/"
-
 # PROGRAM_NAME is provided in custom makefile
 $(PROGRAM_NAME): $(object-list)
 	$(LINK.c) $^ $(LDLIBS) -o $@
