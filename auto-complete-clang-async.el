@@ -57,6 +57,12 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
   :type '(repeat (string :tag "Argument" "")))
 (make-variable-buffer-local 'ac-clang-cflags)
 
+(defcustom ac-clang-extra-imports nil
+  "Files to implicitly #import at the beginning of all files for autocompletion"
+  :group 'auto-complete
+  :type '(repeat (string :tag "File" "")))
+(make-variable-buffer-local 'ac-clang-extra-imports)
+
 (defconst ac-clang-completion-pattern
   "^COMPLETION: \\([^\s\n:]*\\)\\(?: : \\)*\\(.*$\\)")
 
@@ -115,7 +121,10 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
   (save-excursion
     (goto-char pos)
     (format "row:%d\ncolumn:%d\n"
-            (line-number-at-pos)
+            ;; Account for extra lines added by the extra imports.
+            (+ (line-number-at-pos)
+               (- (length (split-string (ac-clang-get-extra-imports-string) "\n"))
+                  1))
             (1+ (- (point) (line-beginning-position))))))
 
 (defsubst ac-clang-lang-option ()
@@ -328,10 +337,14 @@ This variable will typically contain include paths, e.g., (\"-I~/MyProject\" \"-
 (defun ac-clang-send-source-code (proc)
   (save-restriction
     (widen)
-    (let ((buffer-string (buffer-substring-no-properties (point-min) (point-max))))
-          (process-send-string proc (format "source_length:%d\n" (length (string-as-unibyte buffer-string))))
-          (process-send-string proc buffer-string)
-          (process-send-string proc "\n\n"))))
+    (let* ((buffer-string (buffer-substring-no-properties (point-min) (point-max)))
+           (buffer-string-with-imports (concat (ac-clang-get-extra-imports-string) buffer-string)))
+      (process-send-string proc (format "source_length:%d\n" (length (string-as-unibyte buffer-string-with-imports))))
+      (process-send-string proc buffer-string-with-imports)
+      (process-send-string proc "\n\n"))))
+
+(defun ac-clang-get-extra-imports-string ()
+  (mapconcat (lambda (import) (format "#import \"%s\"\n" import)) ac-clang-extra-imports ""))
 
 (defun ac-clang-send-reparse-request (proc)
   (save-restriction
